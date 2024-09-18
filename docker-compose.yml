@@ -3,7 +3,7 @@ version: "3.10"
 services:
 
   app:
-    build: .
+    image: niiazovm/pizza_halal:latest
     volumes:
       - .:/config
       - ./static:/app/static

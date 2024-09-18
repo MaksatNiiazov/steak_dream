@@ -7,6 +7,10 @@ from django.db.models import Q
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+from django.core.serializers import serialize
+
+from ..orders.models import Order
 
 
 @staff_member_required
@@ -57,3 +61,14 @@ def user_chat(request):
     }
 
     return render(request, 'user_chat.html', context)
+
+
+
+def get_user_orders(request):
+    user_id = request.GET.get('user_id')
+    if user_id:
+        orders = Order.objects.filter(user_id=user_id)
+        data = serialize('json', orders)
+        print(data)
+        return JsonResponse({'orders': data}, safe=False)
+    return JsonResponse({'error': 'No user ID provided'}, status=400)

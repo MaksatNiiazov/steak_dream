@@ -1,52 +1,150 @@
-{% load static %}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Чаты</title>
-    <!-- Подключение Bootstrap и пользовательских стилей -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/admin_chat.css' %}">
+    <title>Чаты и заказы</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f0f2f5;
+        }
+        .chat-container, .orders-container {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            height: 400px;
+            overflow-y: auto;
+        }
+        #chat-messages li {
+            margin-bottom: 10px;
+            background-color: #f1f1f1;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #chat-messages li.user-message {
+            background-color: #007bff;
+            color: #ffffff;
+            text-align: right;
+        }
+        .list-group-item-action.active {
+            background-color: #007bff;
+            color: white;
+        }
+    </style>
 </head>
-<body class="container-fluid">
-    <div class="row">
-        <!-- Колонка для списка чатов -->
-        <div class="col-md-4">
-            <h1 class="mt-5 text-center">Список чатов</h1>
-            <div class="list-group" id="chat-list">
-                {% for chat_item in chat_data %}
-                <a href="#" class="list-group-item list-group-item-action chat-link" 
-                   data-room-id="{{ chat_item.chat.id }}"
-                   data-user-id="{{ chat_item.chat.user.id }}"
-                   data-user-username="{{ chat_item.chat.user.username }}">
-                    Чат {{ chat_item.chat.id }}: {{ chat_item.chat.user.phone_number }}
-                </a>
-                {% empty %}
-                <div class="text-center">Чаты отсутствуют</div>
-                {% endfor %}
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-3">
+                <h1>Пользователи</h1>
+                <div class="list-group" id="user-list"></div>
             </div>
-        </div>
-        <!-- Колонка для самого чата -->
-        <div class="col-md-8">
-            <div id="chat-app" style="display: none; max-width: 600px; margin: auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-                <h2 id="chat-room-title" style="text-align: center; color: #333;"></h2>
-                <div id="chat-window" style="height: 400px; overflow-y: auto; padding: 10px; background-color: #fff; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 10px;">
-                    <ul id="chat-messages" style="list-style-type: none; padding: 0; margin: 0;"></ul>
+            <div class="col-md-5">
+                <h1>Чат</h1>
+                <div class="chat-container" id="chat-container">
+                    <ul id="chat-messages" class="list-unstyled"></ul>
+                    <input type="text" id="chat-message-input" placeholder="Введите сообщение..." class="form-control">
+                    <button id="chat-message-submit" class="btn btn-primary mt-2">Отправить</button>
                 </div>
-                <div style="margin-bottom: 20px;">
-                    <label for="auto-scroll-checkbox">
-                        <input type="checkbox" id="auto-scroll-checkbox" checked> Автопрокрутка
-                    </label>
-                </div>
-                <div style="display: flex; margin-top: 20px;">
-                    <input type="text" id="chat-message-input" placeholder="Введите сообщение..." style="flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; margin-right: 10px;">
-                    <button id="chat-message-submit" style="padding: 10px 20px; background-color: #007bff; color: #fff; border: none; border-radius: 5px; cursor: pointer;">Отправить</button>
-                </div>
+            </div>
+            <div class="col-md-4">
+                <h1>Заказы</h1>
+                <div class="orders-container" id="orders-container"></div>
             </div>
         </div>
     </div>
-    <!-- Подключение JavaScript -->
-    <script src="{% static 'js/admin_chat.js' %}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const users = [
+                {% for chat in chat_data %}
+                { id: {{ chat.chat.id }}, username: {{ chat.chat.user.phone_number }} },
+                {% endfor %}
+
+            ];
+            const userlist = document.getElementById('user-list');
+            const chatMessages = document.getElementById('chat-messages');
+            const messageInput = document.getElementById('chat-message-input');
+            const messageSubmit = document.getElementById('chat-message-submit');
+            let ws = null;
+
+            function setupWebSocket(userId) {
+                if (ws) ws.close();
+                const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                const wsUrl = `${protocol}${window.location.host}/ws/chat/${userId}/`;
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => console.log(`WebSocket connected for user ${userId}`);
+                ws.onerror = error => console.error('WebSocket error:', error);
+                ws.onmessage = event => {
+                    const data = JSON.parse(event.data);
+                    const messageElement = document.createElement('li');
+                    messageElement.className = data.sender_id === userId ? 'user-message' : '';
+                    messageElement.textContent = `${data.sender_username}: ${data.message}`;
+                    chatMessages.appendChild(messageElement);
+                };
+                ws.onclose = () => console.log('WebSocket disconnected');
+            }
+
+            function activateChat(userId) {
+                setupWebSocket(userId);
+                chatMessages.innerHTML = ''; // Clear previous messages
+                fetchOrders(userId); // Fetch and display orders for the selected user
+            }
+
+function fetchOrders(userId) {
+    const url = `/api/get-user-orders/?user_id=${userId}`;
+    fetch(url)
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Убедитесь, что сервер возвращает данные в нужном формате
+        displayOrders(JSON.parse(data.orders));
+    })
+    .catch(error => {
+        console.error('Error loading orders:', error);
+    });
+}
+
+
+function displayOrders(orders) {
+    const ordersContainer = document.getElementById('orders-container');
+    ordersContainer.innerHTML = ''; // Очистка предыдущих заказов
+    orders.forEach(order => {
+        const orderElement = document.createElement('div');
+        orderElement.textContent = `Order #${order.id}: Status - ${order.status}`;
+        ordersContainer.appendChild(orderElement);
+    });
+}
+
+            users.forEach(user => {
+                const userElement = document.createElement('button');
+                userElement.className = 'list-group-item list-group-item-action';
+                userElement.textContent = user.username;
+                userElement.onclick = () => {
+                    document.querySelectorAll('.list-group-item-action').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    userElement.classList.add('active');
+                    activateChat(user.id);
+                };
+                userlist.appendChild(userElement);
+            });
+
+            messageSubmit.addEventListener('click', function() {
+                const message = messageInput.value.trim();
+                if (message && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ message }));
+                    messageInput.value = '';
+                }
+            });
+        });
+    </script>
 </body>
 </html>
